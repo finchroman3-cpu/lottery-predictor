@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0a0504;
+  --gold: #d4a85a;
+  --orange: #ff9550;
+  --card: #1a1210;
+  --border: #2a1f1c;
+  --text: #e8dcc8;
+  --muted: #8a7a6a;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.ball {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 1.25rem;
+  background: linear-gradient(135deg, #2a1f1c, #1a1210);
+  border: 2px solid var(--gold);
+  color: var(--gold);
+  box-shadow: 0 2px 8px rgba(212, 168, 90, 0.15);
+}
+
+.ball-sm {
+  width: 2.5rem;
+  height: 2.5rem;
+  font-size: 1rem;
+}
+
+.ball-predict {
+  background: linear-gradient(135deg, #d4a85a, #ff9550);
+  color: #0a0504;
+  border-color: var(--orange);
+  box-shadow: 0 4px 16px rgba(255, 149, 80, 0.3);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.tab-active {
+  background: linear-gradient(135deg, var(--gold), var(--orange));
+  color: #0a0504;
+  font-weight: 700;
+}
+
+.freq-bar {
+  height: 1.5rem;
+  border-radius: 0.25rem;
+  background: linear-gradient(90deg, var(--gold), var(--orange));
+  transition: width 0.5s ease;
+}
+
+.cold-bar {
+  background: linear-gradient(90deg, #3a2a26, #5a4a40);
+}
