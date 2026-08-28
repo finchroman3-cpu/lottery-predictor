@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "NJ Lottery Predictor — For Fun Only",
-  description: "Lottery number predictions based on frequency analysis. For entertainment only.",
+  title: "NJ & NY Lottery Predictor — For Fun Only",
+  description: "NJ and NY lottery number predictions based on frequency analysis. For entertainment only.",
 };
 
 export default function RootLayout({

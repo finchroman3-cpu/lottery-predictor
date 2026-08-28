@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-
-type GameType = "pick3" | "pick4" | "pick6";
+import { STATE_GAMES, STATE_LABELS, type StateCode, type GameType } from "@/lib/predictor";
 
 interface PredictionData {
+  state: string;
   game: string;
   predictions: number[][];
   hotNumbers: { number: number; count: number; percentage: number }[];
@@ -17,13 +17,8 @@ interface PredictionData {
   error?: string;
 }
 
-const gameConfig: Record<GameType, { label: string; maxNumber: number; pickCount: number; description: string }> = {
-  pick3: { label: "Pick 3", maxNumber: 9, pickCount: 3, description: "3 digits, 0-9" },
-  pick4: { label: "Pick 4", maxNumber: 9, pickCount: 4, description: "4 digits, 0-9" },
-  pick6: { label: "Pick 6", maxNumber: 49, pickCount: 6, description: "6 numbers, 1-49" },
-};
-
 export default function Home() {
+  const [state, setState] = useState<StateCode>("nj");
   const [game, setGame] = useState<GameType>("pick6");
   const [data, setData] = useState<PredictionData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -37,10 +32,10 @@ export default function Home() {
     });
   }, []);
 
-  const fetchData = useCallback(async (g: GameType) => {
+  const fetchData = useCallback(async (s: StateCode, g: GameType) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/predict?game=${g}`);
+      const res = await fetch(`/api/predict?state=${s}&game=${g}`);
       const json = await res.json();
       setData(json);
       setLastUpdate(new Date().toLocaleString("en-US", {
@@ -58,32 +53,52 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    fetchData(game);
-  }, [game, fetchData]);
+    fetchData(state, game);
+  }, [state, game, fetchData]);
 
   // Auto-refresh every 6 hours
   useEffect(() => {
-    const interval = setInterval(() => fetchData(game), 6 * 60 * 60 * 1000);
+    const interval = setInterval(() => fetchData(state, game), 6 * 60 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [game, fetchData]);
+  }, [state, game, fetchData]);
 
-  const config = gameConfig[game];
+  const config = STATE_GAMES[state][game];
 
   return (
     <main className="min-h-screen p-4 md:p-8 max-w-5xl mx-auto">
       {/* Header */}
       <div className="text-center mb-8">
         <h1 className="text-3xl md:text-4xl font-bold mb-2" style={{ color: "var(--gold)" }}>
-          NJ Lottery Predictor
+          {STATE_LABELS[state]} Lottery Predictor
         </h1>
         <p className="text-sm" style={{ color: "var(--muted)" }}>
           Frequency-based predictions · Updated every 6 hours
         </p>
       </div>
 
+      {/* State selector */}
+      <div className="flex gap-2 justify-center mb-4">
+        {(Object.keys(STATE_LABELS) as StateCode[]).map((s) => (
+          <button
+            key={s}
+            onClick={() => setState(s)}
+            className={`px-6 py-2 rounded-xl transition-all text-sm ${
+              state === s ? "tab-active" : ""
+            }`}
+            style={
+              state !== s
+                ? { background: "var(--card)", color: "var(--text)", border: "1px solid var(--border)" }
+                : {}
+            }
+          >
+            {STATE_LABELS[s]}
+          </button>
+        ))}
+      </div>
+
       {/* Game selector */}
       <div className="flex gap-2 justify-center mb-8">
-        {(Object.keys(gameConfig) as GameType[]).map((g) => (
+        {(Object.keys(STATE_GAMES[state]) as GameType[]).map((g) => (
           <button
             key={g}
             onClick={() => setGame(g)}
@@ -96,7 +111,7 @@ export default function Home() {
                 : {}
             }
           >
-            {gameConfig[g].label}
+            {STATE_GAMES[state][g].label}
           </button>
         ))}
       </div>
@@ -251,8 +266,8 @@ export default function Home() {
                     className="flex items-center gap-3 p-3 rounded-xl"
                     style={{ background: "var(--card)", border: "1px solid var(--border)" }}
                   >
-                    <span className="text-xs" style={{ color: "var(--muted)" }}>
-                      {i === 0 ? "Latest" : `Draw ${i + 1}`}
+                    <span className="text-xs w-24 shrink-0" style={{ color: "var(--muted)" }}>
+                      {draw.date || (i === 0 ? "Latest" : `Draw ${i + 1}`)}
                     </span>
                     <div className="flex gap-2">
                       {draw.numbers.map((num, j) => (
@@ -272,8 +287,8 @@ export default function Home() {
             <p>Last updated: {lastUpdate} ET</p>
             <p className="mt-2">
               {data.live
-                ? "Data from NJ Lottery via Lotterycorner · Predictions based on frequency analysis"
-                : "Pick 3/4 use a fixed historical sample (live scraping unavailable) · Predictions based on frequency analysis"}
+                ? "Data from lotterycorner.com's results archive · Predictions based on frequency analysis"
+                : `${STATE_LABELS[state]} ${config.label} uses a fixed historical sample (live scraping unavailable) · Predictions based on frequency analysis`}
             </p>
             <p className="mt-1">
               This is a fun project. Don&apos;t bet money you can&apos;t afford to lose.
@@ -284,7 +299,7 @@ export default function Home() {
         <div className="text-center py-20" style={{ color: "var(--muted)" }}>
           <div className="text-xl mb-4">⚠️ Couldn&apos;t reach the prediction service.</div>
           <button
-            onClick={() => fetchData(game)}
+            onClick={() => fetchData(state, game)}
             className="px-4 py-2 rounded-lg text-sm"
             style={{ background: "var(--card)", color: "var(--text)", border: "1px solid var(--border)" }}
           >

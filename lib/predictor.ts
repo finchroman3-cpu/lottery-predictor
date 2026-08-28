@@ -182,84 +182,106 @@ function shuffleAndPick(pool: number[], count: number): number[] {
   return shuffled.slice(0, count).sort((a, b) => a - b);
 }
 
-// Fetch NJ lottery results using Jina reader proxy (bypasses Cloudflare)
-export async function fetchLotteryResults(game: "pick3" | "pick4" | "pick6"): Promise<Draw[]> {
-  const gameConfig = {
-    pick3: {
-      url: "https://www.lotterycorner.com/nj/pick-3",
-      maxNumber: 9,
-      pickCount: 3,
-    },
-    pick4: {
-      url: "https://www.lotterycorner.com/nj/pick-4",
-      maxNumber: 9,
-      pickCount: 4,
-    },
-    pick6: {
-      url: "https://www.lotterycorner.com/nj/pick-6",
-      maxNumber: 49,
-      pickCount: 6,
-    },
-  };
+export type StateCode = "nj" | "ny";
+export type GameType = "pick3" | "pick4" | "pick6";
 
-  const config = gameConfig[game];
+export interface GameSource {
+  label: string;
+  description: string;
+  // lotterycorner.com/<state>/<slug>/<year> — the year-archive page has a real
+  // dated results table. null means no such archive exists for this combo.
+  slug: string | null;
+  maxNumber: number;
+  pickCount: number;
+}
 
-  // Pick 3 and Pick 4 aren't available on lotterycorner
-  // Use embedded recent data from NJ Lottery (scraped periodically)
-  if (game === "pick3" || game === "pick4") {
-    return getEmbeddedDraws(game);
+export const STATE_LABELS: Record<StateCode, string> = {
+  nj: "New Jersey",
+  ny: "New York",
+};
+
+export const STATE_GAMES: Record<StateCode, Record<GameType, GameSource>> = {
+  nj: {
+    pick3: { label: "Pick 3", description: "3 digits, 0-9", slug: null, maxNumber: 9, pickCount: 3 },
+    pick4: { label: "Pick 4", description: "4 digits, 0-9", slug: null, maxNumber: 9, pickCount: 4 },
+    pick6: { label: "Pick 6", description: "6 numbers, 1-49", slug: "pick-6", maxNumber: 49, pickCount: 6 },
+  },
+  ny: {
+    pick3: { label: "Numbers", description: "3 digits, 0-9 (Evening draw)", slug: "numbers-evening", maxNumber: 9, pickCount: 3 },
+    pick4: { label: "Win 4", description: "4 digits, 0-9 (Evening draw)", slug: "win-4-evening", maxNumber: 9, pickCount: 4 },
+    pick6: { label: "Lotto", description: "6 numbers, 1-59", slug: "lotto", maxNumber: 59, pickCount: 6 },
+  },
+};
+
+// Fetch lottery results using Jina reader proxy (bypasses Cloudflare).
+// Reads the year-archive page, which lists real dated past draws, rather
+// than the game's landing page — that page also embeds lotterycorner's own
+// algorithmic "Smart Pick" suggestions as bare number lists, which look
+// identical to draw results but are not real lottery history.
+export async function fetchLotteryResults(state: StateCode, game: GameType): Promise<Draw[]> {
+  const source = STATE_GAMES[state][game];
+
+  if (!source.slug) {
+    // No scrapable archive for this state/game combo (NJ Pick 3/4 pages are JS-rendered)
+    return state === "nj" ? getEmbeddedDraws(game as "pick3" | "pick4") : [];
   }
 
+  const thisYear = new Date().getFullYear();
+  let draws = await fetchArchiveYear(state, source, thisYear);
+
+  // Early in the year there may not be enough draws yet for a meaningful
+  // sample — pad with the tail end of the previous year's archive.
+  if (draws.length < 8) {
+    const lastYear = await fetchArchiveYear(state, source, thisYear - 1);
+    draws = [...draws, ...lastYear];
+  }
+
+  return draws;
+}
+
+async function fetchArchiveYear(state: StateCode, source: GameSource, year: number): Promise<Draw[]> {
+  const url = `https://www.lotterycorner.com/${state}/${source.slug}/${year}`;
+
   try {
-    const response = await fetch(
-      `https://r.jina.ai/${config.url}`,
-      {
-        headers: { "Accept": "text/plain" },
-        signal: AbortSignal.timeout(10_000),
-      }
-    );
+    const response = await fetch(`https://r.jina.ai/${url}`, {
+      headers: { Accept: "text/plain" },
+      signal: AbortSignal.timeout(10_000),
+    });
 
     if (!response.ok) {
       throw new Error(`Failed to fetch: ${response.status}`);
     }
 
     const text = await response.text();
-
-    // Parse draws from the text
-    const draws: Draw[] = [];
-
-    const pickCount = config.pickCount;
-  const pattern = new RegExp(
-    `(\\d{1,2})\\s+(\\d{1,2})` +
-    (pickCount > 2 ? `\\s+(\\d{1,2})` : "") +
-    (pickCount > 3 ? `\\s+(\\d{1,2})` : "") +
-    (pickCount > 4 ? `\\s+(\\d{1,2})\\s+(\\d{1,2})` : ""),
-    "g"
-  );
-
-    let match;
-    const seen = new Set<string>();
-    while ((match = pattern.exec(text)) !== null) {
-      const nums = match.slice(1).filter(Boolean).map(Number);
-
-      // Validate numbers are in range
-      if (nums.length === pickCount && nums.every((n) => n >= 0 && n <= config.maxNumber)) {
-        const key = nums.sort((a, b) => a - b).join(",");
-        if (!seen.has(key)) {
-          seen.add(key);
-          draws.push({
-            date: "",
-            numbers: nums.sort((a, b) => a - b),
-          });
-        }
-      }
-    }
-
-    return draws;
+    return parseArchiveTable(text, source.pickCount, source.maxNumber);
   } catch (error) {
-    console.error(`Error fetching ${game} results:`, error);
+    console.error(`Error fetching ${state}/${source.slug} (${year}) results:`, error);
     return [];
   }
+}
+
+// Rows look like: "| August 27, 2026 | 1 12 19 25 26 37 Double Play: 11 13 32 37 38 43 | **$4.80 Million** |"
+// or "| August 26, 2026 | 5 10 14 15 30 42 56 Bonus | **$4.90 Million** |" (bonus ball trails the main numbers).
+// The main draw is always the first `pickCount` numbers in the result cell —
+// any Double Play / bonus-ball numbers that follow are extras, not the draw.
+function parseArchiveTable(text: string, pickCount: number, maxNumber: number): Draw[] {
+  const rowPattern = /^\|\s*([A-Za-z]+ \d{1,2}, \d{4})\s*\|\s*(.+?)\s*\|/;
+  const draws: Draw[] = [];
+
+  for (const line of text.split("\n")) {
+    const row = line.match(rowPattern);
+    if (!row) continue;
+
+    const [, date, resultCell] = row;
+    const nums = (resultCell.match(/\d{1,3}/g) || [])
+      .map(Number)
+      .filter((n) => n <= maxNumber);
+
+    if (nums.length < pickCount) continue;
+    draws.push({ date, numbers: nums.slice(0, pickCount).sort((a, b) => a - b) });
+  }
+
+  return draws;
 }
 
 // Embedded recent NJ Pick 3/4 draws (from NJ Lottery, updated Aug 2026)
