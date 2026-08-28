@@ -41,6 +41,7 @@ export async function GET(request: Request) {
       game,
       ...result,
       recentDraws: draws.slice(0, 10),
+      live: game === "pick6",
     }, {
       headers: {
         "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=7200",

@@ -33,7 +33,7 @@ export function generatePredictions(
       predictions: [],
       hotNumbers: [],
       coldNumbers: [],
-      topPairs: [[0, 0, 0]],
+      topPairs: [],
       oddEvenPattern: "",
       totalDraws: 0,
     };
@@ -51,9 +51,9 @@ export function generatePredictions(
     }
   }
 
-  // Sort by frequency
+  // Sort by frequency (drop numbers that never appeared in the sample)
   const sorted = [...freq.entries()]
-    .filter(([n]) => n > 0)
+    .filter(([, count]) => count > 0)
     .sort((a, b) => b[1] - a[1]);
 
   const totalNums = draws.reduce((sum, d) => sum + d.numbers.length, 0);
@@ -95,18 +95,19 @@ export function generatePredictions(
       return [a, b, count] as [number, number, number];
     });
 
-  // Odd/even pattern analysis
-  const oddEvenCounts: Record<string, number> = { "6o0e": 0, "5o1e": 0, "4o2e": 0, "3o3e": 0, "2o4e": 0, "1o5e": 0, "0o6e": 0 };
+  // Odd/even pattern analysis (bucketed dynamically — pickCount varies by game)
+  const oddEvenCounts = new Map<string, number>();
   for (const draw of draws) {
     const odds = draw.numbers.filter((n) => n % 2 === 1).length;
     const evens = draw.numbers.length - odds;
     const key = `${odds}o${evens}e`;
-    if (key in oddEvenCounts) oddEvenCounts[key]++;
+    oddEvenCounts.set(key, (oddEvenCounts.get(key) || 0) + 1);
   }
 
-  const dominantPattern = Object.entries(oddEvenCounts)
-    .sort((a, b) => b[1] - a[1])[0];
-  const oddEvenPattern = `${dominantPattern[0].replace("o", " odd / ").replace("e", " even")} (${dominantPattern[1]}/${draws.length} draws)`;
+  const [dominantKey, dominantCount] = [...oddEvenCounts.entries()].sort(
+    (a, b) => b[1] - a[1]
+  )[0];
+  const oddEvenPattern = `${dominantKey.replace("o", " odd / ").replace("e", " even")} (${dominantCount}/${draws.length} draws)`;
 
   // Generate predictions using multiple strategies
   const predictions: number[][] = [];
@@ -214,6 +215,7 @@ export async function fetchLotteryResults(game: "pick3" | "pick4" | "pick6"): Pr
       `https://r.jina.ai/${config.url}`,
       {
         headers: { "Accept": "text/plain" },
+        signal: AbortSignal.timeout(10_000),
       }
     );
 

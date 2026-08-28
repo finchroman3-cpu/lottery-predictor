@@ -13,6 +13,7 @@ interface PredictionData {
   oddEvenPattern: string;
   totalDraws: number;
   recentDraws: { date: string; numbers: number[] }[];
+  live: boolean;
   error?: string;
 }
 
@@ -27,6 +28,14 @@ export default function Home() {
   const [data, setData] = useState<PredictionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<string>("");
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+
+  const copyPrediction = useCallback((pred: number[], i: number) => {
+    navigator.clipboard.writeText(pred.join(", ")).then(() => {
+      setCopiedIndex(i);
+      setTimeout(() => setCopiedIndex((cur) => (cur === i ? null : cur)), 1500);
+    });
+  }, []);
 
   const fetchData = useCallback(async (g: GameType) => {
     setLoading(true);
@@ -141,7 +150,15 @@ export default function Home() {
                       </span>
                     ))}
                   </div>
-                  <span className="ml-auto text-xs" style={{ color: "var(--muted)" }}>
+                  <button
+                    onClick={() => copyPrediction(pred, i)}
+                    className="ml-auto text-xs px-2 py-1 rounded-md transition-colors"
+                    style={{ color: "var(--muted)", border: "1px solid var(--border)" }}
+                    aria-label="Copy these numbers"
+                  >
+                    {copiedIndex === i ? "✓ Copied" : "📋 Copy"}
+                  </button>
+                  <span className="text-xs" style={{ color: "var(--muted)" }}>
                     {i < 3 ? "🔥 Hot" : i < 6 ? "⚖️ Balanced" : i < 8 ? "🎲 Pairs" : "🎲 Random"}
                   </span>
                 </div>
@@ -216,8 +233,16 @@ export default function Home() {
           {/* Recent Draws */}
           {data.recentDraws && data.recentDraws.length > 0 && (
             <section className="mb-10">
-              <h2 className="text-xl font-bold mb-4" style={{ color: "var(--orange)" }}>
+              <h2 className="text-xl font-bold mb-4 flex items-center gap-2 flex-wrap" style={{ color: "var(--orange)" }}>
                 📋 Recent {config.label} Draws
+                {!data.live && (
+                  <span
+                    className="text-xs font-normal px-2 py-1 rounded-md"
+                    style={{ background: "var(--card)", color: "var(--muted)", border: "1px solid var(--border)" }}
+                  >
+                    Static sample data — not live
+                  </span>
+                )}
               </h2>
               <div className="space-y-2">
                 {data.recentDraws.map((draw, i) => (
@@ -246,14 +271,27 @@ export default function Home() {
           <footer className="text-center text-xs mt-12 pb-8" style={{ color: "var(--muted)" }}>
             <p>Last updated: {lastUpdate} ET</p>
             <p className="mt-2">
-              Data from NJ Lottery via Lotterycorner · Predictions based on frequency analysis
+              {data.live
+                ? "Data from NJ Lottery via Lotterycorner · Predictions based on frequency analysis"
+                : "Pick 3/4 use a fixed historical sample (live scraping unavailable) · Predictions based on frequency analysis"}
             </p>
             <p className="mt-1">
               This is a fun project. Don&apos;t bet money you can&apos;t afford to lose.
             </p>
           </footer>
         </>
-      ) : null}
+      ) : (
+        <div className="text-center py-20" style={{ color: "var(--muted)" }}>
+          <div className="text-xl mb-4">⚠️ Couldn&apos;t reach the prediction service.</div>
+          <button
+            onClick={() => fetchData(game)}
+            className="px-4 py-2 rounded-lg text-sm"
+            style={{ background: "var(--card)", color: "var(--text)", border: "1px solid var(--border)" }}
+          >
+            Try again
+          </button>
+        </div>
+      )}
     </main>
   );
 }
