@@ -265,11 +265,41 @@ async function fetchArchiveYear(state: StateCode, source: GameSource, year: numb
 // The main draw is always the first `pickCount` numbers in the result cell —
 // any Double Play / bonus-ball numbers that follow are extras, not the draw.
 function parseArchiveTable(text: string, pickCount: number, maxNumber: number): Draw[] {
-  const rowPattern = /^\|\s*([A-Za-z]+ \d{1,2}, \d{4})\s*\|\s*(.+?)\s*\|/;
+  const lines = text.split(/\r?\n/);
   const draws: Draw[] = [];
+  const seenDates = new Set<string>();
+  const datePattern = /(?:^|\s)(?:\d+\.\s+)?([A-Za-z]+day,?\s+[A-Za-z]+\s+\d{1,2},\s+\d{4})\s*$/;
+  const tableRowPattern = /^\|\s*([A-Za-z]+ \d{1,2}, \d{4})\s*\|\s*(.+?)\s*\|/;
 
-  for (const line of text.split("\n")) {
-    const row = line.match(rowPattern);
+  // Current LotteryCorner pages render each draw as a date followed by
+  // one bullet per winning number. Read only the first pickCount bullets;
+  // the following bullets belong to Double Play and must be ignored.
+  for (let i = 0; i < lines.length; i++) {
+    const dateMatch = lines[i].match(datePattern);
+    if (!dateMatch) continue;
+
+    const date = dateMatch[1];
+    if (seenDates.has(date)) continue;
+
+    const nums: number[] = [];
+    for (let j = i + 1; j < lines.length && nums.length < pickCount; j++) {
+      const numberMatch = lines[j].match(/^\s*\*\s+(\d{1,3})\s*$/);
+      if (!numberMatch) continue;
+      const number = Number(numberMatch[1]);
+      if (number <= maxNumber) nums.push(number);
+    }
+
+    if (nums.length === pickCount) {
+      seenDates.add(date);
+      draws.push({ date, numbers: nums.sort((a, b) => a - b) });
+    }
+  }
+
+  if (draws.length > 0) return draws;
+
+  // Backward-compatible parser for the former Markdown table format.
+  for (const line of lines) {
+    const row = line.match(tableRowPattern);
     if (!row) continue;
 
     const [, date, resultCell] = row;
@@ -277,8 +307,9 @@ function parseArchiveTable(text: string, pickCount: number, maxNumber: number): 
       .map(Number)
       .filter((n) => n <= maxNumber);
 
-    if (nums.length < pickCount) continue;
-    draws.push({ date, numbers: nums.slice(0, pickCount).sort((a, b) => a - b) });
+    if (nums.length >= pickCount) {
+      draws.push({ date, numbers: nums.slice(0, pickCount).sort((a, b) => a - b) });
+    }
   }
 
   return draws;
